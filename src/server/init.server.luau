@@ -29,6 +29,10 @@ local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
     local startPiece = chessGamePosition[startRow][startCollumn]
     local endPiece = chessGamePosition[endRow][endCollumn]
 
+    if startPiece == "" then
+        return false
+    end
+
     local isCurrentPieceWhite = startPiece == startPiece:lower()
     local isEnemyPieceWhite = endPiece == endPiece:lower()
 
@@ -38,12 +42,16 @@ local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
                endR >= 1 and endR <= maxRow and endC >= 1 and endC <= maxCol
     end
 
-    local function isEnemySquare(row, col)
-        return isCurrentPieceWhite == isEnemyPieceWhite
+    local function isEmptySquare(row, col)
+        return chessGamePosition[row][col]
     end
 
-    local function isEmptySquare(row, col)
-        return endPiece == ""
+    local function isEnemySquare(row, col)
+        if isEmptySquare(row, col) then
+            return false
+        end
+
+        return isCurrentPieceWhite ~= isEnemyPieceWhite
     end
 
     local function isCapturableSquare(row, col)
@@ -69,28 +77,28 @@ local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
     end
 
     -- is in bounds, is capturable (ie. no friendly pieces), have moved 1 square
-    if areCoordinatesInBounds(startRow, startCollumn, endRow, endCollumn) and isCapturableSquare(endRow, endCollumn) and (startRow == endRow and startCollumn == endCollumn)  then
+    -- why was it == before lol
+    if areCoordinatesInBounds(startRow, startCollumn, endRow, endCollumn) and isCapturableSquare(endRow, endCollumn) and (startRow ~= endRow and startCollumn ~= endCollumn)  then
         if startPiece:lower() == "p" then
             local forwardDirection = isCurrentPieceWhite and -1 or 1
             local startRowForDoubleMove = isCurrentPieceWhite and 7 or 2
 
             if endCollumn == startCollumn then
                 -- one square move
-                if endRow == startRow + forwardDirection and isEmptySquare(endRow, endCollumn) then
+                if (endRow == startRow + forwardDirection) and isEmptySquare(endRow, endCollumn) then
                     return true
                 end
 
                 -- two square
-                if endRow == startRow + 2 * forwardDirection and startRow == startRowForDoubleMove then
+                if (endRow == startRow + 2 * forwardDirection) and (startRow == startRowForDoubleMove) then
                     if isEmptySquare(startRow + forwardDirection, startCollumn) and isEmptySquare(endRow, endCollumn) then
                         return true
                     end
                 end
                 
                 -- capture moves
-            elseif endCollumn == startCollumn + 1 or endCollumn == startCollumn - 1 then
-                if endRow == startRow + forwardDirection and
-                isEnemySquare(endRow, endCollumn) then
+            elseif (endCollumn == startCollumn + 1) or (endCollumn == startCollumn - 1) then
+                if (endRow == startRow + forwardDirection) and isEnemySquare(endRow, endCollumn) then
                     return true
                 end
             end
@@ -108,10 +116,35 @@ local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
 
         -- rook moves
         if startPiece:lower() == "r" then
-            if startRow == endRow or startCollumn == endCollumn then
+            if (startRow == endRow) or (startCollumn == endCollumn) then
                 return pathCheck(startRow, startCollumn, endRow, endCollumn)
             end
         end
-        
+
+        local rowDiff = math.abs(endRow - startRow)
+        local colDiff = math.abs(endCollumn - startCollumn)
+
+        -- bishop moves
+        if startPiece:lower() == "b" then
+            -- only perfect diagonals
+            if rowDiff == colDiff then
+                return pathCheck(startRow, startCollumn, endRow, endCollumn)
+            end
+        end
+
+        -- queen moves
+        if startPiece:lower() == "q" then
+            if (startRow == endRow) or (startCollumn == endCollumn) or (rowDiff == colDiff) then
+                return pathCheck(startRow, startCollumn, endRow, endCollumn)
+            end
+        end
+
+        -- knight moves
+        if startPiece:lower() == "n" then
+            -- 2 up/down + 1 right/left or vice versa
+            if (rowDiff == 2 and colDiff == 1) or (rowDiff == 1 and colDiff == 2) then
+                return true
+            end
+        end
     end
 end
