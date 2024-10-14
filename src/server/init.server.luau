@@ -65,6 +65,7 @@ local function createBoardFromPosition(position)
     end
 end
 
+-- TODO: implement returning a copy of pos and state instead of just true
 local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
     local startPiece = chessGamePosition[startRow][startCollumn]
     local endPiece = chessGamePosition[endRow][endCollumn]
