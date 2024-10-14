@@ -3,7 +3,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- uppercase = white, lowercase = black
--- enpassant, checks, and checkmate checks
+-- enpassant, checks, and checkmate checks, castling(todo)
 -- fen notation for stockfish
 local chessGamePosition = {
     {"R", "N", "B", "Q", "K", "B", "N", "R"}, -- row 1 (black)
@@ -25,8 +25,8 @@ local chessGameinfo = {
     ["kingMovedBlack"] = false,
     ["rookMovedWhiteA"] = false,
     ["rookMovedWhiteH"] = false,
-    ["rookMovedBlackA"] = false,
-    ["rookMovedBlackH"] = false
+    ["rookMovedBlackA"] = false, -- a row rook
+    ["rookMovedBlackH"] = false -- h rook
 }
 
 local function pieceIsWhite(piece)
@@ -36,25 +36,31 @@ end
 -- square is 4x4 studs, 64 squares, alternating white and black
 local function createBoardFromPosition(position)
     local board = workspace.Board
-    local boardPieces = board.pieces
+    local boardPieces = board.Pieces
 
-    for _, oldPiece in board:GetDescendants() do
+    for _, oldPiece in board.Pieces:GetDescendants() do
         oldPiece:Destroy()
     end
 
     for rowIndex, row in ipairs(chessGamePosition) do
         for collumnIndex, piece in ipairs(row) do
-            -- get piece from lowercase ident.
-            local pieceMesh = ReplicatedStorage.Pieces[piece:lower()]:Clone()
+            if piece ~= "" then
+                -- get piece from lowercase ident.
+                local pieceMesh = ReplicatedStorage.Pieces[piece:lower()]:Clone()
+                -- height and pos alignment
+                pieceMesh.CFrame = board[rowIndex][collumnIndex].CFrame * CFrame.new(Vector3.new(0, pieceMesh.Size.Y / 2, 0))
 
-            if pieceIsWhite(piece) then
-                pieceMesh.BrickColor = BrickColor.new("Institutional white")
-            else
-                pieceMesh.BrickColor = BrickColor.new("Really black")
+                if pieceIsWhite(piece) then
+                    pieceMesh.BrickColor = BrickColor.new("Institutional white")
+                    -- rotate part to face proper direction relative to board
+                    pieceMesh.CFrame = pieceMesh.CFrame * CFrame.Angles(0, math.rad(180), 0)
+                    pieceMesh.Name = piece:upper()
+                else
+                    pieceMesh.BrickColor = BrickColor.new("Really black")
+                end
+
+                pieceMesh.Parent = board.Pieces
             end
-
-            pieceMesh.Position = board[rowIndex][collumnIndex].CFrame * CFrame.new(Vector3.new(0, 1, 0))
-            pieceMesh.Parent = board.Pieces
         end
     end
 end
@@ -62,12 +68,18 @@ end
 local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
     local startPiece = chessGamePosition[startRow][startCollumn]
     local endPiece = chessGamePosition[endRow][endCollumn]
+    -- i think is prefix is better used for functions but oh well
     local isCurrentPieceWhite = pieceIsWhite(startPiece)
     local isEnemyPieceWhite = pieceIsWhite(endPiece)
 
     -- no fake pieces
     if startPiece == "" then
         return false
+    end
+
+    -- implement
+    local function isInCheck()
+        
     end
 
     -- within 8x8 grid
@@ -113,9 +125,13 @@ local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
         return true
     end
 
+    if not areCoordinatesInBounds(startRow, startCollumn, endRow, endCollumn) then
+        return false
+    end
+
     -- is in bounds, is capturable (ie. no friendly pieces), have moved 1 square
     -- why was it == before lol
-    if areCoordinatesInBounds(startRow, startCollumn, endRow, endCollumn) and isCapturableSquare(endRow, endCollumn) and (startRow ~= endRow and startCollumn ~= endCollumn)  then
+    if isCapturableSquare(endRow, endCollumn) and (startRow ~= endRow and startCollumn ~= endCollumn) then
         if startPiece:lower() == "p" then
             local forwardDirection = isCurrentPieceWhite and -1 or 1
             local startRowForDoubleMove = isCurrentPieceWhite and 7 or 2
@@ -183,6 +199,45 @@ local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
                 return true
             end
         end
+    -- castling
+    -- TODO: end piece in chess.com is not rook! but instead the square next to the rook
+    -- decide whether to keep this behaviour or not
+    elseif startPiece:lower() == "k" and endPiece == "r" then
+        -- king either direction 2 square towards rook
+        -- rook moves 1 kingside, rook 3 queenside A file
+        local kingRow = isCurrentPieceWhite and 8 or 1 -- white is on row 8, black is on row 1
+        local kingMoved = isCurrentPieceWhite and chessGameinfo["kingMovedWhite"] or chessGameinfo["kingMovedBlack"]
+        local rookMoved
+
+        -- im not making this a ternary lol
+        if endCollumn == 1 then
+            if isCurrentPieceWhite then
+                rookMoved = chessGameinfo["rookMovedWhiteA"]
+            else
+                rookMoved = chessGameinfo["rookMovedBlackA"]
+            end
+        elseif endCollumn == 8 then
+            if isCurrentPieceWhite then
+                rookMoved = chessGameinfo["rookMovedWhiteH"]
+            else
+                rookMoved = chessGameinfo["rookMovedBlackH"]
+            end
+        end
+
+        if not kingMoved and not rookMoved and pathCheck(startRow, startCollumn, endRow, endCollumn) then
+            local kingNewCollumn = endCollumn == 1 and 3 or 7  -- 3 for queenside, 7 for kingside
+            local rookNewCollumn = endCollumn == 1 and 4 or 6  -- 4 for queenside, 6 for kingside
+
+            return true
+        end
+    end
+end
+
+local function makeMove(startR, startC, endR, endC)
+    if isMoveValid(startR, startC, endR, endC) then
+        local piece = chessGamePosition[startR][startC]
+
+        createBoardFromPosition(chessGamePosition)
     end
 end
 
