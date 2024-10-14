@@ -1,5 +1,7 @@
 -- hobby project for soph. programming/chess club
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 -- uppercase = white, lowercase = black
 -- enpassant, checks, and checkmate checks
 -- fen notation for stockfish
@@ -27,16 +29,41 @@ local chessGameinfo = {
     ["rookMovedBlackH"] = false
 }
 
--- segment is 4x4 studs, 64 squares, alternating white and black
-local function createBoardFromPosition(position)
+local function pieceIsWhite(piece)
+    return piece == piece:lower()
+end
 
+-- square is 4x4 studs, 64 squares, alternating white and black
+local function createBoardFromPosition(position)
+    local board = workspace.Board
+    local boardPieces = board.pieces
+
+    for _, oldPiece in board:GetDescendants() do
+        oldPiece:Destroy()
+    end
+
+    for rowIndex, row in ipairs(chessGamePosition) do
+        for collumnIndex, piece in ipairs(row) do
+            -- get piece from lowercase ident.
+            local pieceMesh = ReplicatedStorage.Pieces[piece:lower()]:Clone()
+
+            if pieceIsWhite(piece) then
+                pieceMesh.BrickColor = BrickColor.new("Institutional white")
+            else
+                pieceMesh.BrickColor = BrickColor.new("Really black")
+            end
+
+            pieceMesh.Position = board[rowIndex][collumnIndex].CFrame * CFrame.new(Vector3.new(0, 1, 0))
+            pieceMesh.Parent = board.Pieces
+        end
+    end
 end
 
 local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
     local startPiece = chessGamePosition[startRow][startCollumn]
     local endPiece = chessGamePosition[endRow][endCollumn]
-    local isCurrentPieceWhite = startPiece == startPiece:lower()
-    local isEnemyPieceWhite = endPiece == endPiece:lower()
+    local isCurrentPieceWhite = pieceIsWhite(startPiece)
+    local isEnemyPieceWhite = pieceIsWhite(endPiece)
 
     -- no fake pieces
     if startPiece == "" then
@@ -158,3 +185,5 @@ local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
         end
     end
 end
+
+createBoardFromPosition(chessGamePosition)
