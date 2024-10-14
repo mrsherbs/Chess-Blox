@@ -1,6 +1,8 @@
+-- hobby project for soph. programming/chess club
+
 -- uppercase = white, lowercase = black
 -- enpassant, checks, and checkmate checks
--- use fen notation for stockfish
+-- fen notation for stockfish
 local chessGamePosition = {
     {"R", "N", "B", "Q", "K", "B", "N", "R"}, -- row 1 (black)
     {"P", "P", "P", "P", "P", "P", "P", "P"}, -- row 2 (black pawns)
@@ -25,17 +27,23 @@ local chessGameinfo = {
     ["rookMovedBlackH"] = false
 }
 
+-- segment is 4x4 studs, 64 squares, alternating white and black
+local function createBoardFromPosition(position)
+
+end
+
 local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
     local startPiece = chessGamePosition[startRow][startCollumn]
     local endPiece = chessGamePosition[endRow][endCollumn]
+    local isCurrentPieceWhite = startPiece == startPiece:lower()
+    local isEnemyPieceWhite = endPiece == endPiece:lower()
 
+    -- no fake pieces
     if startPiece == "" then
         return false
     end
 
-    local isCurrentPieceWhite = startPiece == startPiece:lower()
-    local isEnemyPieceWhite = endPiece == endPiece:lower()
-
+    -- within 8x8 grid
     local function areCoordinatesInBounds(startR, startC, endR, endC)
         local maxRow, maxCol = #chessGamePosition, #chessGamePosition[1]
         return startR >= 1 and startR <= maxRow and startC >= 1 and startC <= maxCol and
@@ -43,9 +51,10 @@ local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
     end
 
     local function isEmptySquare(row, col)
-        return chessGamePosition[row][col]
+        return chessGamePosition[row][col] == ""
     end
 
+    -- is opp. color
     local function isEnemySquare(row, col)
         if isEmptySquare(row, col) then
             return false
@@ -58,13 +67,14 @@ local function isMoveValid(startRow, startCollumn, endRow, endCollumn)
         return isEmptySquare(row, col) or isEnemySquare(row, col)
     end
 
-    -- as we only check the squares betwene the start and end squares, and as the last piece is already known to be capturable
+    -- as i only check the squares between the start and end squares, and as the last piece is already known to be capturable
     -- there is no need to check this again
     local function pathCheck(startR, startC, endR, endC)
         local rowIncrement = startR == endR and 0 or (endR > startR and 1 or -1)
         local colIncrement = startC == endC and 0 or (endC > startC and 1 or -1)
         local r, c = startR + rowIncrement, startC + colIncrement
 
+        -- iter through pieces path, check for pieces blocking it
         while r ~= endR or c ~= endC do
             if chessGamePosition[r][c] ~= "" then
                 return false
