@@ -9,8 +9,8 @@ function helpers.destroyDescendants(instance)
 end
 
 -- roblox lua table.copy does not behave like i expected with nested tables
--- any changes to a nested table will replicate
--- recursively copies instances
+-- any changes to values in x.table will replicate to table.clone(x).table
+-- recursively copies instances in table
 function helpers.deepCopy(original)
 	local copy = {}
 
