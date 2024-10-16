@@ -120,7 +120,7 @@ local function isInCheck(checkBoard, checkInfo, isCurrentPieceWhite)
         local canAttackKing = executeMoveOnBoard(checkBoard, checkInfo, enemyRow, enemyCol, kingRow, kingCol)
 
         -- if any enemy can attack the kings position (king is in check) ^^
-        if canAttackKing thenS
+        if canAttackKing then
             return true
         end
     end
