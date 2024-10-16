@@ -421,6 +421,7 @@ function getAllValidMovesForPiece(board, info, row, collumn)
     return moves
 end
 
+-- just setup the physical board
 createBoardFromPosition = function(position)
     local board = workspace.Board
 
@@ -454,6 +455,8 @@ createBoardFromPosition = function(position)
     end
 end
 
+-- checkmate check
+-- ran after every move
 local function isCheckmate(board, info)
     local currentPlayer = info["nextPlayer"]
     local isCurrentPieceWhite
@@ -470,8 +473,10 @@ local function isCheckmate(board, info)
         return false
     end
 
+    -- for every square
     for row = 1, 8 do
         for col = 1, 8 do
+            -- get the piece on the square
             local piece = board[row][col]
 
             if piece ~= "" and (pieceIsWhite(piece) == isCurrentPieceWhite) then
@@ -499,6 +504,8 @@ local function isCheckmate(board, info)
     return true
 end
 
+-- is stalemate
+-- ran after every move
 local function isStalemate(board, info)
     local currentPlayer = info["nextPlayer"]
     local isCurrentPieceWhite
@@ -535,6 +542,7 @@ makeMove = function(startR, startC, endR, endC)
     local board, captured, info = executeMoveOnBoard(chess.chessGamePosition, chess.chessGameInfo, startR, startC, endR, endC)
 
     if board then
+        -- TODO: add promotion
         chess.chessGamePosition = board
         chess.chessGameInfo = info
     
@@ -555,6 +563,7 @@ makeMove = function(startR, startC, endR, endC)
             chess.chessGameInfo.nextPlayer = "w"
         end
 
+        -- final checks for checkmate and stalemate
         if isCheckmate(chess.chessGamePosition, chess.chessGameInfo) then
             print("Checkmate")
         end
