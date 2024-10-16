@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- lowercase = white, uppercase = black
 -- enpassant, checks, and checkmate checks, castling <-- (todo)
 -- fen notation for stockfish
+-- TODO: PROMOTION, FIX EN PASSANT, ENGINE
 chess.chessGamePosition = {
     {"R", "N", "B", "Q", "K", "B", "N", "R"}, -- row 1 (black)
     {"P", "P", "P", "P", "P", "P", "P", "P"}, -- row 2 (black pawns)
@@ -119,7 +120,7 @@ local function isInCheck(checkBoard, checkInfo, isCurrentPieceWhite)
         local canAttackKing = executeMoveOnBoard(checkBoard, checkInfo, enemyRow, enemyCol, kingRow, kingCol)
 
         -- if any enemy can attack the kings position (king is in check) ^^
-        if canAttackKing then
+        if canAttackKing thenS
             return true
         end
     end
@@ -203,6 +204,7 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
     local function isEnPassantSquare(row, col)
         -- compare row and col from param to that of en passant coord table
         local enPassantRow, enPassantCol = info["enPassantCoordinates"][1], info["enPassantCoordinates"][2]
+        warn(enPassantRow, enPassantCol, row, col)
 
         if enPassantRow and enPassantCol then
             if enPassantRow == row and enPassantCol == col then
@@ -251,11 +253,11 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
                 -- two square
                 if (endRow == startRow + 2 * forwardDirection) and (startRow == startRowForDoubleMove) then
                     if isEmptySquare(startRow + forwardDirection, startCollumn) and isEmptySquare(endRow, endCollumn) then
+                        local newBoard, isCaptureMove, newInfo = checkCheckEnPassantReset(board, info, startRow, startCollumn, endRow, endCollumn, isCurrentPieceWhite)
 
                         -- en passant coordinates + where the pawn to die is at
                         info["enPassantCoordinates"] = {startRow + 1 * forwardDirection, startCollumn, startRow + 2 * forwardDirection}
-
-                        local newBoard, isCaptureMove, newInfo = checkCheckEnPassantReset(board, info, startRow, startCollumn, endRow, endCollumn, isCurrentPieceWhite)
+                        print(info.enPassantCoordinates)
 
                         return newBoard, isCaptureMove, newInfo
                     end
@@ -264,6 +266,7 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
                 -- capture moves
             elseif (endCollumn == startCollumn + 1) or (endCollumn == startCollumn - 1) then
                 local enPassantSquare = isEnPassantSquare(endRow, endCollumn)
+                print(enPassantSquare)
                 if (endRow == startRow + forwardDirection) and (isEnemySquare(endRow, endCollumn) or enPassantSquare) then
                     local newBoard, isCaptureMove, newInfo = checkCheckEnPassantReset(board, info, startRow, startCollumn, endRow, endCollumn, isCurrentPieceWhite, enPassantSquare)
                     return newBoard, isCaptureMove, newInfo
