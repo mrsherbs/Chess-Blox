@@ -1,6 +1,9 @@
 -- hobby project for soph. programming/chess club
--- module script for containing chess
--- promotion
+-- module script for containing chess functions
+
+-- im not too proud about the way i wrote en passant but im probably not gonna fix it because
+-- i dont even really like chess that much
+-- ill fix it if they make chess 2
 local chess = {}
 
 local helpers = require(script.Parent.helpers)
@@ -9,7 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- lowercase = white, uppercase = black
 -- enpassant, checks, and checkmate checks, castling <-- (todo)
 -- fen notation for stockfish
--- TODO: PROMOTION, FIX EN PASSANT, ENGINE
+-- TODO: PROMOTION, ENGINE
 chess.chessGamePosition = {
     {"R", "N", "B", "Q", "K", "B", "N", "R"}, -- row 1 (black)
     {"P", "P", "P", "P", "P", "P", "P", "P"}, -- row 2 (black pawns)
@@ -23,11 +26,11 @@ chess.chessGamePosition = {
 
 -- fen notation: w or b next player
 chess.chessGameInfo = {
-    ["nextPlayer"] = "w",
-    ["enPassantCoordinates"] = "-", -- implement, only one en passant possible at a time (?)
+    ["nextPlayer"] = "w", -- white goes first
+    ["enPassantCoordinates"] = "-", -- either - or table
     ["movesSinceCapture"] = "0", -- these are half moves to be exact (aka: piles)
-    ["moveNumber"] = 1,
-    ["kingMovedWhite"] = false,
+    ["moveNumber"] = 1, 
+    ["kingMovedWhite"] = false, -- all of these for castling checks
     ["kingMovedBlack"] = false,
     ["rookMovedWhiteA"] = false,
     ["rookMovedWhiteH"] = false,
@@ -40,6 +43,8 @@ local getAllValidMovesForPiece, executeMoveOnBoard
 local createBoardFromPosition, makeMove, displayValidMovesForPiece
 
 local function pieceIsWhite(piece)
+    -- all white pieces are lowercase
+    -- if the param is lowercase then it is white
     return piece == piece:lower()
 end
 
@@ -47,6 +52,7 @@ end
 local function getAllEnemyPieces(checkBoard, isCurrentPieceWhite)
     local pieces = {}
 
+    -- iterate through given board to check all pieces
     for rowIndex, row in ipairs(checkBoard) do
         for collumnIndex, piece in ipairs(row) do
             -- if friendly team ~= piece team
@@ -60,12 +66,14 @@ local function getAllEnemyPieces(checkBoard, isCurrentPieceWhite)
     return pieces
 end
 
--- king pos, row, col
+-- king pos returns row, col as a tuple
+-- why? atm: checking for check/mate
 local function getKingPosition(checkBoard, isCurrentPieceWhite)
     local kingSymbol = isCurrentPieceWhite and "k" or "K"
 
     for rowIndex, row in ipairs(checkBoard) do
         local kingIndex = table.find(row, kingSymbol)
+        -- rowIndex[kingIndex] is king position
         if kingIndex then
             return rowIndex, kingIndex
         end
@@ -74,13 +82,17 @@ local function getKingPosition(checkBoard, isCurrentPieceWhite)
     return false
 end
 
--- move piece from start to end location
--- ignores all chess rules
+-- moves piece at start position to end position, leaving behind an empty square
 local function movePieceFromPosition(position, startR, startC, endR, endC, enPassant)
     local piece = position[startR][startC]
     position[startR][startC] = ""
     position[endR][endC] = piece
-	
+    
+    -- en passant coords inputted are the position of the piece to be captured
+    -- en passant coords as seen in given position are a table of 3 values when en passant is available:
+    -- row of piece - pawn move direction (for displaying capture sqaure), the collumn (shared by both), actual row of piece
+    -- this should be a dict and really only either index 1 or 3 is needed but
+    -- i didn't think ahead
     if enPassant then
         position[enPassant[1]][enPassant[2]] = ""
     end
@@ -107,7 +119,7 @@ local function isInCheck(checkBoard, checkInfo, isCurrentPieceWhite)
     local enemies = getAllEnemyPieces(checkBoard, isCurrentPieceWhite)
 
     for _, pieceInfo in ipairs(enemies) do
-        -- simulate enemy movement for each enemy piece
+        -- simulate enemy movement for each enemy piece on a virtual board
         local enemyRow, enemyCol = pieceInfo[1], pieceInfo[2]
         
         -- swap to enemy team for simulation
@@ -117,9 +129,14 @@ local function isInCheck(checkBoard, checkInfo, isCurrentPieceWhite)
             checkInfo["nextPlayer"] = "w"
         end
 
+        -- remember that executeMove does not modify the given board, but instead returns a new board which
+        -- you can use to replace the existing board
+        -- since we are just simulating a move to see if it's possible
+        -- it isn't saved
         local canAttackKing = executeMoveOnBoard(checkBoard, checkInfo, enemyRow, enemyCol, kingRow, kingCol)
 
         -- if any enemy can attack the kings position (king is in check) ^^
+        -- below value is either false or a board table
         if canAttackKing then
             return true
         end
@@ -135,8 +152,10 @@ local function checkCheckEnPassantReset(boardCheck, infoCheck, startR, startC, e
     local simulatedBoard = helpers.deepCopy(boardCheck)
 
     -- piece row, piece col
-    -- since enpassant[1] is also a row (but it's the square that is captured)
+    -- since enpassant[1] is also a row (but it's the square that is captured, so we don't use it)
+    -- this should've really just been a dictionary for readability lol
     if enPassant then
+        -- index 1 and 3 are rows, 2 is a collumn
         enPassant = {infoCheck["enPassantCoordinates"][3], infoCheck["enPassantCoordinates"][2]}
 	end
 
@@ -153,6 +172,9 @@ local function checkCheckEnPassantReset(boardCheck, infoCheck, startR, startC, e
     return newBoard, isCaptureMove, infoCheck
 end
 
+-- takes a board, info, and positions as input
+-- returns a board where piece at start pos moves to end pos
+-- otherwise if it is impossible, return false
 function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endCollumn)
     board = helpers.deepCopy(board)
     info = helpers.deepCopy(info)
@@ -197,14 +219,15 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
         return isCurrentPieceWhite ~= isEnemyPieceWhite
     end
 
+    -- is the square able to be landed on by your piece
     local function isCapturableSquare(row, col)
         return isEmptySquare(row, col) or isEnemySquare(row, col)
     end
 
+    -- is this square available for taking en passant
     local function isEnPassantSquare(row, col)
         -- compare row and col from param to that of en passant coord table
         local enPassantRow, enPassantCol = info["enPassantCoordinates"][1], info["enPassantCoordinates"][2]
-        warn(enPassantRow, enPassantCol, row, col)
 
         if enPassantRow and enPassantCol then
             if enPassantRow == row and enPassantCol == col then
@@ -216,6 +239,8 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
     end
 
     -- this only checks pieces between start and end
+    -- why? start piece is already known to be your piece
+    -- end position is known to be capturable before this is ran
     local function pathCheck(startR, startC, endR, endC)
         local rowIncrement = startR == endR and 0 or (endR > startR and 1 or -1)
         local colIncrement = startC == endC and 0 or (endC > startC and 1 or -1)
@@ -237,9 +262,12 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
         return false
     end
 
-    -- is capturable (ie. no friendly pieces), have moved 1 square
+    -- is capturable (ie. no friendly pieces) and check if piece has moved at least one square
     if isCapturableSquare(endRow, endCollumn) and not (startRow == endRow and startCollumn == endCollumn) then
+        -- pawn moves
         if startPiece:lower() == "p" then
+            -- pawns move either up one row or down one row
+            -- pawns must be on the 7th row (if white) or 2nd row (if black) for double moves
             local forwardDirection = isCurrentPieceWhite and -1 or 1
             local startRowForDoubleMove = isCurrentPieceWhite and 7 or 2
             
@@ -274,12 +302,14 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
             end
         end
 
+        -- move
         local rowDiff = math.abs(endRow - startRow)
         local colDiff = math.abs(endCollumn - startCollumn)
 
         -- king moves
         if startPiece:lower() == "k" then
             if (rowDiff <= 1 and colDiff <= 1) then
+                -- for castling
                 if isCurrentPieceWhite then
                     info["kingMovedWhite"] = true
                 else
@@ -296,6 +326,7 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
             if (startRow == endRow) or (startCollumn == endCollumn) then
                 if pathCheck(startRow, startCollumn, endRow, endCollumn) then
 
+                    -- for castling
                     if isCurrentPieceWhite then
                         if endCollumn == 1 then
                             info["rookMovedWhiteA"] = true
@@ -414,8 +445,12 @@ end
 function getAllValidMovesForPiece(board, info, row, collumn)
     local moves = {}
 
+    -- 8x8 = 64 or the total number of squares on a board
+    -- brute force check all squares
+    -- performance implications? idk lol and who cares it's chess
     for rowIndex = 1, 8 do
         for collumnIndex = 1, 8 do
+            -- simulate moving to this piece
             if executeMoveOnBoard(board, info, row, collumn, rowIndex, collumnIndex) then
                 table.insert(moves, {rowIndex, collumnIndex})
             end
@@ -429,12 +464,15 @@ end
 createBoardFromPosition = function(position)
     local board = workspace.Board
 
+    -- clear
     helpers.destroyDescendants(board.Pieces)
     helpers.destroyDescendants(board.Circles)
 
+    -- for every square on board
     for rowIndex, row in ipairs(position) do
         for collumnIndex, piece in ipairs(row) do
             if piece ~= "" then
+                -- generate a new piece and color it as well as tying displaying moves to its click
                 local pieceMesh = ReplicatedStorage.Pieces[piece:lower()]:Clone()
                 pieceMesh.CFrame = board[rowIndex][collumnIndex].CFrame * CFrame.new(Vector3.new(0, pieceMesh.Size.Y / 2, 0))
                 
@@ -471,6 +509,7 @@ local function isCheckmate(board, info)
         isCurrentPieceWhite = false
     end
 
+    -- checkmate is not possible if not already in check
     if not isInCheck(board, info, isCurrentPieceWhite) then
         return false
     end
@@ -508,6 +547,9 @@ end
 
 -- is stalemate
 -- ran after every move
+-- stalemate in this is no valid moves on board
+-- stalemate in chess is no valid moves on board AND not in checkmate
+-- this is always ran AFTER the checkmate check, so we already know it's not mate
 local function isStalemate(board, info)
     local currentPlayer = info["nextPlayer"]
     local isCurrentPieceWhite
@@ -525,7 +567,9 @@ local function isStalemate(board, info)
             -- check if the piece belongs to the current player
             if piece ~= "" and (pieceIsWhite(piece) == isCurrentPieceWhite) then
                 local validMoves = getAllValidMovesForPiece(board, info, row, col)
-                
+
+                -- if any piece on your team can move
+                -- you are not in stalemate
                 if #validMoves > 0 then
                     return false
                 end
@@ -536,6 +580,11 @@ local function isStalemate(board, info)
     return not isInCheck(board, info)
 end
 
+-- theres like 3 functions related to making moves and i dont think anyone else working
+-- on this would be able to tell what's what
+-- this is to handle the player moving to a known valid square and handling gamestate
+-- already known to be valid because this is called by the displayValidMovesForPiece function on
+-- circle click
 makeMove = function(startR, startC, endR, endC)
     -- new board setup from valid func
     -- checkmate check
@@ -547,7 +596,7 @@ makeMove = function(startR, startC, endR, endC)
         chess.chessGameInfo = info
     
         chess.chessGameInfo.moveNumber = chess.chessGameInfo.moveNumber + 1
-    
+        
         if captured then
             chess.chessGameInfo["movesSinceCapture"] = 0
         else
@@ -574,6 +623,7 @@ makeMove = function(startR, startC, endR, endC)
     end
 end
 
+-- red circles on where we can move
 displayValidMovesForPiece = function(row, collumn)
     local validMoves = getAllValidMovesForPiece(chess.chessGamePosition, chess.chessGameInfo, row, collumn)
 
