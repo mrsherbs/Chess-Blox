@@ -1,5 +1,6 @@
 -- hobby project for soph. programming/chess club
 -- module script for containing chess
+-- promotion
 local chess = {}
 
 local helpers = require(script.Parent.helpers)
@@ -461,8 +462,6 @@ local function isCheckmate(board, info)
     local currentPlayer = info["nextPlayer"]
     local isCurrentPieceWhite
 
-    print(currentPlayer)
-
     if currentPlayer == "w" then
         isCurrentPieceWhite = true
     else
@@ -509,8 +508,6 @@ end
 local function isStalemate(board, info)
     local currentPlayer = info["nextPlayer"]
     local isCurrentPieceWhite
-
-    print(currentPlayer)
 
     if currentPlayer == "w" then
         isCurrentPieceWhite = true
