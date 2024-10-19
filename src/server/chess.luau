@@ -16,7 +16,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 chess.chessGamePosition = {
     {"R", "N", "B", "Q", "K", "B", "N", "R"}, -- row 1 (black)
     {"P", "P", "P", "P", "P", "P", "P", "P"}, -- row 2 (black pawns)
-    {"", "", "", "", "", "", "", ""},         -- row 3 (empty)
+    {"", "", "", "Q", "Q", "Q", "", ""},         -- row 3 (empty)
     {"", "", "", "", "", "", "", ""},         -- row 4 (empty)
     {"", "", "", "", "", "", "", ""},         -- row 5 (empty)
     {"", "", "", "", "", "", "", ""},         -- row 6 (empty)
@@ -27,26 +27,77 @@ chess.chessGamePosition = {
 -- fen notation: w or b next player
 chess.chessGameInfo = {
     ["nextPlayer"] = "w", -- white goes first
-    ["enPassantCoordinates"] = "-", -- either - or table
+    ["enPassantCoordinates"] = "-", -- either - or dict
     ["movesSinceCapture"] = "0", -- these are half moves to be exact (aka: piles)
-    ["moveNumber"] = 1, 
-    ["kingMovedWhite"] = false, -- all of these for castling checks
-    ["kingMovedBlack"] = false,
+    ["moveNumber"] = 1,
+    ["kingMovedWhite"] = true, -- all of these for castling checks
+    ["kingMovedBlack"] = true,
     ["rookMovedWhiteA"] = false,
     ["rookMovedWhiteH"] = false,
     ["rookMovedBlackA"] = false, -- a coll rook
     ["rookMovedBlackH"] = false -- h coll rook
 }
 
-local getAllValidMovesForPiece, executeMoveOnBoard
--- forward declarations due to mutual recursion in these 3 functions
-local createBoardFromPosition, makeMove, displayValidMovesForPiece
-
 local function pieceIsWhite(piece)
     -- all white pieces are lowercase
     -- if the param is lowercase then it is white
     return piece == piece:lower()
 end
+
+-- representing 1, 8 times for an empty row is equal to just 8 in FEN
+-- ex: Rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1
+local function positionAndInfoToFEN(position, info)
+    local str = ""
+
+    -- piece position
+    for rowIndex = 1, #position, 1 do
+        local row = position[rowIndex]
+        for columnIndex, piece in ipairs(row) do
+            if piece == "" then
+                -- add empty square
+                str = str .. "1"
+            else
+                if pieceIsWhite(piece) then
+                    piece = piece:upper()
+                else
+                    piece = piece:lower()
+                end
+
+                str = str .. piece
+            end
+        end
+
+        if rowIndex < #position then
+            str = str .. "/"  -- row separator
+        end
+    end
+
+    -- next player
+    str = str .. " " .. info["nextPlayer"]
+
+    -- castling
+    local castlingAvailability = ""
+
+    castlingAvailability = castlingAvailability ..
+	    (info["rookMovedWhiteA"] == false and "Q" or "") ..
+	    (info["rookMovedWhiteH"] == false and "K" or "") ..
+	    (info["rookMovedBlackA"] == false and "q" or "") ..
+	    (info["rookMovedBlackH"] == false and "k" or "")
+
+    str = str .. " " .. castlingAvailability
+
+    -- en passant coordinates
+    -- convert coll number to ascii equiv, row remains the same
+    str = str .. " " .. (info["enPassantCoordinates"]["captureLocation"] and string.char(info["enPassantCoordinates"]["captureLocation"] + 96) .. info["enPassantCoordinates"]["collumn"] or "-")
+
+    str = str .. " " .. math.round(info["moveNumber"] / 2) .. " " .. math.floor(info["moveNumber"] / 2)
+
+    return str
+end
+
+local getAllValidMovesForPiece, executeMoveOnBoard
+-- forward declarations due to mutual recursion in these 3 functions
+local createBoardFromPosition, makeMove, displayValidMovesForPiece
 
 -- all enemy pieces on board
 local function getAllEnemyPieces(checkBoard, isCurrentPieceWhite)
@@ -109,14 +160,16 @@ local function isInCheck(checkBoard, checkInfo, isCurrentPieceWhite)
     checkInfo = helpers.deepCopy(checkInfo)
 
     -- ensure nobody can use a castling move to escape from checks
-    if isCurrentPieceWhite then
-        checkInfo["kingMovedWhite"] = true
-    else
-        checkInfo["kingMovedBlack"] = true
-    end
+    -- this only applies to the simulated move
+    checkInfo[isCurrentPieceWhite and "kingMovedWhite" or "kingMovedBlack"] = true
 
     local kingRow, kingCol = getKingPosition(checkBoard, isCurrentPieceWhite)
     local enemies = getAllEnemyPieces(checkBoard, isCurrentPieceWhite)
+
+    -- ?
+    if not kingRow or not kingCol then
+        return true
+    end
 
     for _, pieceInfo in ipairs(enemies) do
         -- simulate enemy movement for each enemy piece on a virtual board
@@ -151,12 +204,9 @@ end
 local function checkCheckEnPassantReset(boardCheck, infoCheck, startR, startC, endR, endC, isCurrentPieceWhite, enPassant)
     local simulatedBoard = helpers.deepCopy(boardCheck)
 
-    -- piece row, piece col
-    -- since enpassant[1] is also a row (but it's the square that is captured, so we don't use it)
-    -- this should've really just been a dictionary for readability lol
     if enPassant then
         -- index 1 and 3 are rows, 2 is a collumn
-        enPassant = {infoCheck["enPassantCoordinates"][3], infoCheck["enPassantCoordinates"][2]}
+        enPassant = {infoCheck["enPassantCoordinates"]["pieceLocation"], infoCheck["enPassantCoordinates"]["collumn"]}
 	end
 
     local newBoard, isCaptureMove = movePieceFromPosition(simulatedBoard, startR, startC, endR, endC, enPassant)
@@ -182,22 +232,6 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
     local endPiece = board[endRow][endCollumn]
     local isCurrentPieceWhite = pieceIsWhite(startPiece)
     local isEnemyPieceWhite = pieceIsWhite(endPiece)
-
-    -- no fake pieces
-    if startPiece == "" then
-        return false
-    end
-    
-    -- turn check
-    if isCurrentPieceWhite then
-        if info["nextPlayer"] == "b" then
-            return false
-        end
-    else
-        if info["nextPlayer"] == "w" then
-            return false
-        end
-    end
 
     -- within 8x8 grid
     local function areCoordinatesInBounds(startR, startC, endR, endC)
@@ -229,10 +263,8 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
         -- compare row and col from param to that of en passant coord table
         local enPassantRow, enPassantCol = info["enPassantCoordinates"][1], info["enPassantCoordinates"][2]
 
-        if enPassantRow and enPassantCol then
-            if enPassantRow == row and enPassantCol == col then
-                return true
-            end
+        if enPassantRow == row and enPassantCol == col then
+            return true
         end
 
         return false
@@ -262,6 +294,17 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
         return false
     end
 
+    -- no fake pieces
+    if startPiece == "" then
+        return false
+    end
+    
+    -- turn check
+    -- condition, true value, false value
+    if info["nextPlayer"] ~= (isCurrentPieceWhite and "w" or "b") then
+        return false
+    end
+
     -- is capturable (ie. no friendly pieces) and check if piece has moved at least one square
     if isCapturableSquare(endRow, endCollumn) and not (startRow == endRow and startCollumn == endCollumn) then
         -- pawn moves
@@ -284,8 +327,11 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
                         local newBoard, isCaptureMove, newInfo = checkCheckEnPassantReset(board, info, startRow, startCollumn, endRow, endCollumn, isCurrentPieceWhite)
 
                         -- en passant coordinates + where the pawn to die is at
-                        info["enPassantCoordinates"] = {startRow + 1 * forwardDirection, startCollumn, startRow + 2 * forwardDirection}
-                        print(info.enPassantCoordinates)
+                        info["enPassantCoordinates"] = {
+                            ["captureLocation"] = startRow + 1 * forwardDirection, -- where enemy pawn will move when capturing en passant
+                            ["collumn"] = startCollumn, -- pawn collumn
+                            ["pieceLocation"] = startRow + 2 * forwardDirection -- location of the piece
+                        }
 
                         return newBoard, isCaptureMove, newInfo
                     end
@@ -294,7 +340,7 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
                 -- capture moves
             elseif (endCollumn == startCollumn + 1) or (endCollumn == startCollumn - 1) then
                 local enPassantSquare = isEnPassantSquare(endRow, endCollumn)
-                print(enPassantSquare)
+
                 if (endRow == startRow + forwardDirection) and (isEnemySquare(endRow, endCollumn) or enPassantSquare) then
                     local newBoard, isCaptureMove, newInfo = checkCheckEnPassantReset(board, info, startRow, startCollumn, endRow, endCollumn, isCurrentPieceWhite, enPassantSquare)
                     return newBoard, isCaptureMove, newInfo
@@ -307,17 +353,55 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
         local colDiff = math.abs(endCollumn - startCollumn)
 
         -- king moves
-        if startPiece:lower() == "k" then
+        -- TODO: fix this.. end piece sometimes ends up being an enemy lol
+        if startPiece:lower() == "k"  then
             if (rowDiff <= 1 and colDiff <= 1) then
                 -- for castling
-                if isCurrentPieceWhite then
-                    info["kingMovedWhite"] = true
-                else
-                    info["kingMovedBlack"] = true
-                end
+                info[isCurrentPieceWhite and "kingMovedWhite" or "kingMovedBlack"] = true
 
                 local newBoard, isCaptureMove, newInfo = checkCheckEnPassantReset(board, info, startRow, startCollumn, endRow, endCollumn, isCurrentPieceWhite)
                 return newBoard, isCaptureMove, newInfo
+            end
+
+            -- king either direction 2 square towards rook
+            -- rook moves 1 kingside, rook 3 queenside A file
+            local rookMovedDictIndex
+
+            -- just save the index in the info dict instead of the value of the info dict
+            local kingMovedDictIndex = isCurrentPieceWhite and "kingMovedWhite" or "kingMovedBlack"
+
+            if endCollumn == 1 or endCollumn == 2 or endCollumn == 3 then
+                rookMovedDictIndex = isCurrentPieceWhite and "rookMovedWhiteA" or "rookMovedBlackA"
+            elseif endCollumn == 8 or endCollumn == 7 or endCollumn == 6 then
+                rookMovedDictIndex = isCurrentPieceWhite and "rookMovedWhiteH" or "rookMovedBlackH"
+            end
+
+            -- 3 for queenside, 7 for kingside
+            local kingNewCollumn = endCollumn == 1 and 3 or 7
+            -- 4 for queenside, 6 for kingside
+            local rookNewCollumn = endCollumn == 1 and 4 or 6
+
+            if endCollumn == 7 then
+                endCollumn = 8
+            elseif endCollumn == 1 then
+                endCollumn = 2
+            end
+
+            if info[kingMovedDictIndex] == false and info[rookMovedDictIndex] == false and pathCheck(startRow, startCollumn, endRow, endCollumn) and startCollumn == endCollumn then
+
+                info[kingMovedDictIndex] = true
+                info[rookMovedDictIndex] = true
+
+                -- move the king, king only changes his collumn !
+                local newBoard, isCaptureMove = checkCheckEnPassantReset(board, info, startRow, startCollumn, startRow, kingNewCollumn, isCurrentPieceWhite)
+                -- change this behaviour if needed, the end collumn is where the rook is
+                -- rook starts off where player selected to move, which is why we use endcollumn as 2nd arg
+                if newBoard then
+                    newBoard, isCaptureMove = checkCheckEnPassantReset(newBoard, info, startRow, endCollumn, startRow, rookNewCollumn, isCurrentPieceWhite)
+                    return newBoard, isCaptureMove, info
+                else
+                    return false
+                end
             end
         end
 
@@ -328,17 +412,9 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
 
                     -- for castling
                     if isCurrentPieceWhite then
-                        if endCollumn == 1 then
-                            info["rookMovedWhiteA"] = true
-                        else
-                            info["rookMovedWhiteH"] = true
-                        end
+                        info[endCollumn == 1 and "rookMovedWhiteA" or "rookMovedWhiteH"] = true
                     else
-                        if endCollumn == 1 then
-                            info["rookMovedBlackA"] = true
-                        else
-                            info["rookMovedBlackH"] = true
-                        end
+                        info[endCollumn == 1 and "rookMovedBlackA" or "rookMovedBlackH"] = true
                     end
 
                     local newBoard, isCaptureMove, newInfo = checkCheckEnPassantReset(board, info, startRow, startCollumn, endRow, endCollumn, isCurrentPieceWhite)
@@ -375,67 +451,6 @@ function executeMoveOnBoard(board, info, startRow, startCollumn, endRow, endColl
             if (rowDiff == 2 and colDiff == 1) or (rowDiff == 1 and colDiff == 2) then
                 local newBoard, isCaptureMove, newInfo = checkCheckEnPassantReset(board, info, startRow, startCollumn, endRow, endCollumn, isCurrentPieceWhite)
                 return newBoard, isCaptureMove, newInfo
-            end
-        end
-
-    -- castling
-    elseif startPiece:lower() == "k" and endPiece:lower() == "r" then
-        -- king either direction 2 square towards rook
-        -- rook moves 1 kingside, rook 3 queenside A file
-        local kingMoved        
-        local rookMoved
-
-        if isCurrentPieceWhite then
-            kingMoved = info["kingMovedWhite"]
-        else
-            kingMoved = info["kingMovedBlack"]
-        end
-
-        -- i wouldnt repeat myself here and then in the next block but to be honest
-        -- i dont think theres a good way to do this w/out ruining readability
-        if endCollumn == 1 then
-            if isCurrentPieceWhite then
-                rookMoved = info["rookMovedWhiteA"]
-            else
-                rookMoved = info["rookMovedBlackA"]
-            end
-        elseif endCollumn == 8 then
-            if isCurrentPieceWhite then
-                rookMoved = info["rookMovedWhiteH"]
-            else
-                rookMoved = info["rookMovedBlackH"]
-            end
-        end
-        
-        if not kingMoved and not rookMoved and pathCheck(startRow, startCollumn, endRow, endCollumn) then
-            -- 3 for queenside, 7 for kingside
-            local kingNewCollumn = endCollumn == 1 and 3 or 7
-            -- 4 for queenside, 6 for kingside
-            local rookNewCollumn = endCollumn == 1 and 4 or 6
-
-            if endCollumn == 1 then
-                if isCurrentPieceWhite then
-                    info["rookMovedWhiteA"] = true
-                else
-                    info["rookMovedBlackA"] = true
-                end
-            elseif endCollumn == 8 then
-                if isCurrentPieceWhite then
-                    info["rookMovedWhiteH"] = true
-                else
-                    info["rookMovedBlackH"] = true
-                end
-            end
-
-            -- move the king, king only changes his collumn !
-            local newBoard, isCaptureMove = checkCheckEnPassantReset(board, info, startRow, startCollumn, startRow, kingNewCollumn, isCurrentPieceWhite)
-            -- change this behaviour if needed, the end collumn is where the rook is
-            -- rook starts off where player selected to move, which is why we use endcollumn as 2nd arg
-            if newBoard then
-                newBoard, isCaptureMove = checkCheckEnPassantReset(newBoard, info, startRow, endCollumn, startRow, rookNewCollumn, isCurrentPieceWhite)
-                return newBoard, isCaptureMove, info
-            else
-                return false
             end
         end
     end
@@ -478,6 +493,7 @@ createBoardFromPosition = function(position)
                 
                 -- set piece color
                 if pieceIsWhite(piece) then
+                    pieceMesh.ClickDetector.MaxActivationDistance = 0
                     pieceMesh.BrickColor = BrickColor.new("Institutional white")
                     pieceMesh.CFrame = pieceMesh.CFrame * CFrame.Angles(0, math.rad(180), 0)
                     pieceMesh.Name = piece:upper()
@@ -503,11 +519,7 @@ local function isCheckmate(board, info)
     local currentPlayer = info["nextPlayer"]
     local isCurrentPieceWhite
 
-    if currentPlayer == "w" then
-        isCurrentPieceWhite = true
-    else
-        isCurrentPieceWhite = false
-    end
+    isCurrentPieceWhite = (currentPlayer == "w")
 
     -- checkmate is not possible if not already in check
     if not isInCheck(board, info, isCurrentPieceWhite) then
@@ -534,7 +546,7 @@ local function isCheckmate(board, info)
                     -- move the piece on the simulated board
                     local newBoard, _, _ = checkCheckEnPassantReset(simulatedBoard, simulatedInfo, row, col, endRow, endCol)
 
-                    if not isInCheck(newBoard, simulatedInfo, isCurrentPieceWhite) then
+                    if newBoard and not isInCheck(newBoard, simulatedInfo, isCurrentPieceWhite) then
                         return false
                     end
                 end
@@ -554,11 +566,7 @@ local function isStalemate(board, info)
     local currentPlayer = info["nextPlayer"]
     local isCurrentPieceWhite
 
-    if currentPlayer == "w" then
-        isCurrentPieceWhite = true
-    else
-        isCurrentPieceWhite = false
-    end
+    isCurrentPieceWhite = (currentPlayer == "w")
 
     for row = 1, 8 do
         for col = 1, 8 do
@@ -578,6 +586,61 @@ local function isStalemate(board, info)
     end
 
     return not isInCheck(board, info)
+end
+
+-- chess algebraic notation to coords on board
+local function algebraicToCoords(move)
+    -- subtract result from 9 because stockfish API counts rows differently
+    -- row 1 on game board would be 8 on stockfish
+    local colLetterStart = move:sub(1, 1)  -- 1st column letter
+    local rowStart = 9 - tonumber(move:sub(2, 2))  -- 1st row number
+
+    local colLetterEnd = move:sub(3, 3)  -- 2nd column letter
+    local rowEnd = 9 - tonumber(move:sub(4, 4))  -- 2nd row number
+
+    -- convert column letters to numbers
+    local startCol = string.byte(colLetterStart) - string.byte("a") + 1
+    local endCol = string.byte(colLetterEnd) - string.byte("a") + 1
+
+    return rowStart, startCol, rowEnd, endCol
+end
+
+local function callStockfish()
+    local HttpService = game:GetService("HttpService")
+
+    local FEN = positionAndInfoToFEN(chess.chessGamePosition, chess.chessGameInfo)
+    local depth = 10 -- stockfish depth, 10-19 integer
+
+    -- sanitize url
+    -- replace all nonallowed chars
+    local function urlencode(str)
+        str = string.gsub(str, "([^%w _%%%-%.~])", function(c)
+            return string.format("%%%02X", string.byte(c))
+        end)
+        return string.gsub(str, " ", "+")
+    end
+
+    -- api
+    local baseUrl = "https://stockfish.online/api/s/v2.php"
+    local url = baseUrl .. "?fen=" .. urlencode(FEN) .. "&depth=" .. depth
+
+    local success, result = pcall(function()
+        return HttpService:GetAsync(url, true)
+    end)
+
+    print(success)
+
+    -- handle the result
+    if success then
+        local decodedResult = HttpService:JSONDecode(result)
+        local continuation = decodedResult["continuation"]
+        local firstMove = string.match(continuation, "%w%d%w%d")
+
+        print(firstMove)
+        return firstMove
+    else
+        warn("request failed:", result)
+    end
 end
 
 -- theres like 3 functions related to making moves and i dont think anyone else working
@@ -606,11 +669,7 @@ makeMove = function(startR, startC, endR, endC)
         createBoardFromPosition(chess.chessGamePosition)
 
         -- swap player
-        if chess.chessGameInfo.nextPlayer == "w" then
-            chess.chessGameInfo.nextPlayer = "b"
-        else
-            chess.chessGameInfo.nextPlayer = "w"
-        end
+        chess.chessGameInfo.nextPlayer = (chess.chessGameInfo.nextPlayer == "w") and "b" or "w"
 
         -- final checks for checkmate and stalemate
         if isCheckmate(chess.chessGamePosition, chess.chessGameInfo) then
@@ -619,6 +678,10 @@ makeMove = function(startR, startC, endR, endC)
 
         if isStalemate(chess.chessGamePosition, chess.chessGameInfo) then
             print("Stalemate")
+        end
+
+        if chess.chessGameInfo.nextPlayer == "w" then
+            makeMove(algebraicToCoords(callStockfish()))
         end
     end
 end
@@ -642,9 +705,9 @@ displayValidMovesForPiece = function(row, collumn)
         end)
     end
 end
-
 chess.init = function()
     createBoardFromPosition(chess.chessGamePosition)
+    makeMove(algebraicToCoords(callStockfish()))
 end
 
 return chess
